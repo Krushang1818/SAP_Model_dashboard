@@ -16,6 +16,9 @@ data/
 *.sqlite
 *.sqlite3
 *.log
+*.pid
+config/node_identity.json
+.tools/
 
 # Editor and OS files
 .vscode/

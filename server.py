@@ -40,10 +40,20 @@ def env_bool(name: str, default: bool) -> bool:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
-API_KEY = os.getenv("CUSTOM_LLM_API_KEY", "")
-
 from trainer import ModelServerTrainer
+from connection_manager import (
+    NodeIdentityStore,
+    local_ipv4_addresses,
+    pairing_link,
+    require_local_request,
+    require_node_token,
+)
+from tunnel_manager import TunnelManager
+
 trainer = ModelServerTrainer()
+identity = NodeIdentityStore()
+SERVER_PORT = int(os.getenv("MODEL_SERVER_PORT", "8001"))
+tunnel_manager = TunnelManager(server_port=SERVER_PORT)
 
 # Active version tracking config file
 ACTIVE_VERSION_FILE = SERVER_DIR / "config" / "active_model_version.json"
@@ -52,9 +62,14 @@ MODEL_DIR = None
 if ACTIVE_VERSION_FILE.exists():
     try:
         active_data = json.loads(ACTIVE_VERSION_FILE.read_text(encoding="utf-8"))
+        active_version = str(active_data.get("active_version") or "").strip()
         active_path = active_data.get("active_path")
-        if active_path:
-            MODEL_DIR = Path(active_path)
+        portable_path = SERVER_DIR / "versions" / active_version if active_version else None
+        configured_path = Path(active_path) if active_path else None
+        if portable_path and portable_path.exists():
+            MODEL_DIR = portable_path
+        elif configured_path and configured_path.exists():
+            MODEL_DIR = configured_path
     except Exception as exc:
         logger.error("Failed to load active model configuration: %s", exc)
 
@@ -78,7 +93,7 @@ TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
 
 from fastapi.staticfiles import StaticFiles
 
-app = FastAPI(title="Offline SAP-Compatible Model Server", version="1.0.0")
+app = FastAPI(title="Offline SAP-Compatible Model Server", version="1.1.0")
 templates = Jinja2Templates(directory=str(SERVER_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(SERVER_DIR / "static")), name="static")
 
@@ -121,6 +136,9 @@ class TrainRequest(BaseModel):
 
 class ActivateRequest(BaseModel):
     version_name: str
+
+class TunnelStartRequest(BaseModel):
+    mode: str
 
 def model_source() -> tuple[str, str | None]:
     """Return (base_source, adapter_source) for loading adapter layers or full model."""
@@ -218,6 +236,11 @@ def load_model_and_tokenizer() -> None:
         model_load_error = str(exc)
         logger.exception("Offline LLM loading failed: %s", exc)
 
+
+@app.on_event("shutdown")
+def stop_managed_tunnel() -> None:
+    tunnel_manager.stop()
+
 def clean_and_repair_json(raw_text: str) -> str:
     raw_text = raw_text.strip()
     if raw_text.startswith("```"):
@@ -242,37 +265,138 @@ def clean_and_repair_json(raw_text: str) -> str:
     return raw_text
 
 def require_api_key(authorization: Optional[str]) -> None:
-    if not API_KEY:
-        return
-    token = ""
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ", 1)[1]
-    if token != API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing Authorization token.",
-        )
+    require_node_token(identity, authorization)
+
+
+def active_model_name() -> str:
+    if ACTIVE_VERSION_FILE.exists():
+        try:
+            active_data = json.loads(ACTIVE_VERSION_FILE.read_text(encoding="utf-8"))
+            active_version = str(active_data.get("active_version") or "").strip()
+            if active_version:
+                return active_version
+        except (OSError, json.JSONDecodeError):
+            pass
+    return MODEL_DIR.name
+
+
+def model_ready() -> bool:
+    return model is not None and model_load_error is None
+
+
+def connection_payload() -> dict[str, object]:
+    lan_links = [
+        {
+            "address": address,
+            "base_url": f"http://{address}:{SERVER_PORT}",
+            "pairing_link": pairing_link(
+                f"http://{address}:{SERVER_PORT}", identity.token
+            ),
+        }
+        for address in local_ipv4_addresses()
+    ]
+    configured_public_url = os.getenv("CLOUDFLARE_PUBLIC_URL", "").strip().rstrip("/")
+    tunnel_status = tunnel_manager.status()
+    active_public_url = str(tunnel_status.get("public_url") or "").rstrip("/")
+    return {
+        "node_id": identity.node_id,
+        "api_token": identity.token,
+        "local_base_url": f"http://127.0.0.1:{SERVER_PORT}",
+        "local_pairing_link": pairing_link(
+            f"http://127.0.0.1:{SERVER_PORT}", identity.token
+        ),
+        "lan_links": lan_links,
+        "configured_public_url": configured_public_url or None,
+        "configured_public_pairing_link": (
+            pairing_link(configured_public_url, identity.token)
+            if configured_public_url
+            else None
+        ),
+        "active_tunnel_pairing_link": (
+            pairing_link(active_public_url, identity.token)
+            if active_public_url
+            else None
+        ),
+        "tunnel": tunnel_status,
+        "model_ready": model_ready(),
+        "active_model": active_model_name(),
+    }
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
     """Render the HTML Standalone Retraining and Resource dashboard."""
+    require_local_request(request)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
             "request": request,
-            "api_key": API_KEY,
         }
     )
 
 @app.get("/health")
 def health() -> dict[str, object]:
     return {
-        "status": "healthy" if model is not None else "not_ready",
-        "model_loaded": model is not None,
+        "status": "healthy" if model_ready() else "not_ready",
+        "model_loaded": model_ready(),
+    }
+
+
+@app.get("/v1/connection/verify")
+def verify_connection(authorization: Optional[str] = Header(None)):
+    require_api_key(authorization)
+    return {
+        "node_id": identity.node_id,
+        "server_version": app.version,
+        "status": "ready" if model_ready() else "not_ready",
+        "model_ready": model_ready(),
+        "active_model": active_model_name(),
         "model_dir": str(MODEL_DIR),
         "load_error": model_load_error,
     }
+
+
+@app.get("/v1/local/connection")
+def get_local_connection(request: Request):
+    require_local_request(request)
+    return connection_payload()
+
+
+@app.post("/v1/local/token/rotate")
+def rotate_local_token(request: Request):
+    require_local_request(request)
+    identity.rotate_token()
+    return connection_payload()
+
+
+@app.get("/v1/local/tunnel/status")
+def get_local_tunnel_status(request: Request):
+    require_local_request(request)
+    payload = connection_payload()
+    return {
+        "tunnel": payload["tunnel"],
+        "active_tunnel_pairing_link": payload["active_tunnel_pairing_link"],
+        "configured_public_pairing_link": payload[
+            "configured_public_pairing_link"
+        ],
+    }
+
+
+@app.post("/v1/local/tunnel/start")
+def start_local_tunnel(body: TunnelStartRequest, request: Request):
+    require_local_request(request)
+    try:
+        tunnel_manager.start(body.mode)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return connection_payload()
+
+
+@app.post("/v1/local/tunnel/stop")
+def stop_local_tunnel(request: Request):
+    require_local_request(request)
+    tunnel_manager.stop()
+    return connection_payload()
 
 @app.post("/v1/orchestration", response_model=BtpOrchestrationResponse)
 async def orchestration(

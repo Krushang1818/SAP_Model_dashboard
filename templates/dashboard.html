@@ -799,6 +799,48 @@
       </div>
     </section>
 
+    <section class="panel" style="border-top:4px solid var(--brand-blue); margin-bottom:16px;">
+      <div class="panel-header">
+        <h2 class="panel-title">PC1 Connection Links</h2>
+        <span class="panel-badge" id="pairingStatusBadge" style="background:var(--muted);">LOADING</span>
+      </div>
+      <div class="panel-body">
+        <div class="factor-grid">
+          <div class="factor-card" style="border-top-color:var(--success);">
+            <div class="factor-topline">LAN / SAME NETWORK</div>
+            <div class="factor-label" id="lanLinkLabel" style="font-family:var(--mono); word-break:break-all; min-height:38px;">Detecting local network…</div>
+            <button class="button primary" id="copyLanButton" type="button" onclick="copyPairingLink('lan')" disabled>Copy LAN Link</button>
+          </div>
+          <div class="factor-card" style="border-top-color:var(--brand-blue);">
+            <div class="factor-topline">QUICK INTERNET TUNNEL</div>
+            <div class="factor-label" id="quickLinkLabel" style="font-family:var(--mono); word-break:break-all; min-height:38px;">Not running</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="button primary" id="startQuickButton" type="button" onclick="startTunnel('quick')">Start Quick Tunnel</button>
+              <button class="button" id="copyQuickButton" type="button" onclick="copyPairingLink('quick')" disabled>Copy Link</button>
+            </div>
+          </div>
+          <div class="factor-card" style="border-top-color:var(--warning);">
+            <div class="factor-topline">PERMANENT INTERNET TUNNEL</div>
+            <div class="factor-label" id="namedLinkLabel" style="font-family:var(--mono); word-break:break-all; min-height:38px;">Not configured</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="button primary" id="startNamedButton" type="button" onclick="startTunnel('named')">Start Named Tunnel</button>
+              <button class="button" id="copyNamedButton" type="button" onclick="copyPairingLink('named')" disabled>Copy Link</button>
+            </div>
+          </div>
+          <div class="factor-card" style="border-top-color:var(--error);">
+            <div class="factor-topline">ACCESS TOKEN</div>
+            <div class="factor-label" id="tokenLabel" style="font-family:var(--mono); min-height:38px;">Loading secure token…</div>
+            <button class="button negative" type="button" onclick="rotatePairingToken()">Rotate Token</button>
+          </div>
+        </div>
+        <div id="pairingMessage" class="message-strip info" style="display:none; margin-top:16px;"></div>
+        <div style="display:flex; gap:10px; margin-top:16px; align-items:center;">
+          <button class="button negative" id="stopTunnelButton" type="button" onclick="stopTunnel()" style="display:none;">Stop Active Tunnel</button>
+          <span style="font-size:12px; color:var(--muted);">Paste a copied link into PC1 → Settings → Model Server Connection.</span>
+        </div>
+      </div>
+    </section>
+
     <div class="review-layout">
       <!-- Left / Main Panel -->
       <div class="review-main">
@@ -953,9 +995,148 @@
   </div>
 
   <script>
-    const apiKey = "{{ api_key }}";
+    let apiKey = "";
+    let connectionInfo = null;
     let pollInterval = null;
     let hardwareInfo = null;
+
+    function maskToken(token) {
+      if (!token) return '—';
+      if (token.length <= 8) return '••••••••';
+      return `${token.slice(0, 4)}••••••••${token.slice(-4)}`;
+    }
+
+    function pairingMessage(message, kind = 'info') {
+      const box = document.getElementById('pairingMessage');
+      box.className = `message-strip ${kind}`;
+      box.textContent = message;
+      box.style.display = 'block';
+    }
+
+    async function loadConnectionPanel() {
+      try {
+        const res = await fetch('/v1/local/connection');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not load connection links');
+        connectionInfo = data;
+        apiKey = data.api_token || '';
+
+        const lan = data.lan_links && data.lan_links.length ? data.lan_links[0] : null;
+        document.getElementById('lanLinkLabel').textContent = lan ? lan.base_url : 'No LAN address detected; use localhost only.';
+        document.getElementById('copyLanButton').disabled = !lan;
+        document.getElementById('tokenLabel').textContent = maskToken(apiKey);
+
+        const tunnel = data.tunnel || {};
+        const isQuick = tunnel.running && tunnel.mode === 'quick';
+        const isNamed = tunnel.running && tunnel.mode === 'named';
+        const quickPairing = isQuick ? data.active_tunnel_pairing_link : null;
+        const namedPairing = isNamed
+          ? data.active_tunnel_pairing_link
+          : data.configured_public_pairing_link;
+
+        document.getElementById('quickLinkLabel').textContent = quickPairing
+          ? tunnel.public_url
+          : (tunnel.available ? 'Not running' : 'cloudflared is not installed');
+        document.getElementById('copyQuickButton').disabled = !quickPairing;
+        document.getElementById('startQuickButton').disabled = Boolean(tunnel.running);
+
+        document.getElementById('namedLinkLabel').textContent = namedPairing
+          ? (isNamed ? tunnel.public_url : data.configured_public_url)
+          : (tunnel.named_configured ? 'Ready to start' : 'Set CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_PUBLIC_URL');
+        document.getElementById('copyNamedButton').disabled = !namedPairing;
+        document.getElementById('startNamedButton').disabled = Boolean(tunnel.running) || !tunnel.named_configured;
+
+        const stopButton = document.getElementById('stopTunnelButton');
+        stopButton.style.display = tunnel.running ? 'inline-flex' : 'none';
+        const badge = document.getElementById('pairingStatusBadge');
+        badge.textContent = tunnel.running ? `${tunnel.mode.toUpperCase()} TUNNEL ACTIVE` : 'LAN READY';
+        badge.style.background = tunnel.running ? 'var(--brand-blue)' : 'var(--success)';
+
+        if (tunnel.error) {
+          pairingMessage(tunnel.error, 'error');
+        }
+      } catch (error) {
+        console.error(error);
+        pairingMessage(error.message || 'Could not load PC1 connection links.', 'error');
+      }
+    }
+
+    async function copyPairingLink(kind) {
+      if (!connectionInfo) return;
+      let link = null;
+      if (kind === 'lan') {
+        link = connectionInfo.lan_links && connectionInfo.lan_links.length
+          ? connectionInfo.lan_links[0].pairing_link
+          : null;
+      } else if (kind === 'quick') {
+        link = connectionInfo.tunnel.mode === 'quick'
+          ? connectionInfo.active_tunnel_pairing_link
+          : null;
+      } else if (kind === 'named') {
+        link = connectionInfo.tunnel.mode === 'named'
+          ? connectionInfo.active_tunnel_pairing_link
+          : connectionInfo.configured_public_pairing_link;
+      }
+      if (!link) {
+        pairingMessage('That connection link is not available yet.', 'warning');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(link);
+        pairingMessage('Pairing link copied. Paste it into PC1 Settings.', 'success');
+      } catch (error) {
+        pairingMessage('Clipboard access failed. Use a browser that allows clipboard access on localhost.', 'error');
+      }
+    }
+
+    async function startTunnel(mode) {
+      pairingMessage(`Starting ${mode} tunnel…`, 'info');
+      try {
+        const res = await fetch('/v1/local/tunnel/start', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({mode})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Tunnel failed to start');
+        connectionInfo = data;
+        pairingMessage(`${mode === 'quick' ? 'Quick' : 'Named'} tunnel is active.`, 'success');
+        await loadConnectionPanel();
+      } catch (error) {
+        pairingMessage(error.message || 'Tunnel failed to start.', 'error');
+        await loadConnectionPanel();
+      }
+    }
+
+    async function stopTunnel() {
+      try {
+        const res = await fetch('/v1/local/tunnel/stop', {method: 'POST'});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Tunnel failed to stop');
+        connectionInfo = data;
+        pairingMessage('Tunnel stopped. LAN access remains available.', 'success');
+        await loadConnectionPanel();
+      } catch (error) {
+        pairingMessage(error.message || 'Tunnel failed to stop.', 'error');
+      }
+    }
+
+    async function rotatePairingToken() {
+      if (!window.confirm('Rotate the access token? PC1 will disconnect until you paste a newly generated pairing link.')) {
+        return;
+      }
+      try {
+        const res = await fetch('/v1/local/token/rotate', {method: 'POST'});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Token rotation failed');
+        connectionInfo = data;
+        apiKey = data.api_token || '';
+        pairingMessage('Token rotated. Copy and save a fresh pairing link on PC1.', 'warning');
+        await loadConnectionPanel();
+      } catch (error) {
+        pairingMessage(error.message || 'Token rotation failed.', 'error');
+      }
+    }
 
     function getHeaders() {
       const headers = { 'Content-Type': 'application/json' };
@@ -1240,8 +1421,10 @@
 
     // Initialize Page
     document.addEventListener('DOMContentLoaded', () => {
-      loadHardwareTelemetry();
-      loadModelVersions();
+      loadConnectionPanel().then(() => {
+        loadHardwareTelemetry();
+        loadModelVersions();
+      });
       
       setInterval(() => {
         if (!pollInterval) {
