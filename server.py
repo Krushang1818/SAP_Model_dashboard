@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -48,6 +49,12 @@ from connection_manager import (
     require_node_token,
 )
 from tunnel_manager import TunnelManager
+from model_settings import (
+    ModelRuntimeSettings,
+    model_settings_store,
+    resolve_server_path,
+    validate_model_settings,
+)
 
 trainer = ModelServerTrainer()
 identity = NodeIdentityStore()
@@ -89,6 +96,39 @@ LOCAL_FILES_ONLY = env_bool("LLM_LOCAL_FILES_ONLY", True)
 LOAD_IN_4BIT = env_bool("LLM_LOAD_IN_4BIT", True)
 MAX_NEW_TOKENS = int(os.getenv("LLM_MAX_NEW_TOKENS", "1024"))
 TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
+runtime_model_settings = model_settings_store.load(
+    ModelRuntimeSettings(
+        model_dir=str(MODEL_DIR),
+        base_model_path=BASE_MODEL_PATH,
+        lora_adapter_path=LORA_ADAPTER_PATH,
+        mock_mode=env_bool(
+            "OFFLINE_LLM_MOCK",
+            env_bool("AI_MOCK", True),
+        ),
+        local_files_only=LOCAL_FILES_ONLY,
+        load_in_4bit=LOAD_IN_4BIT,
+        max_new_tokens=MAX_NEW_TOKENS,
+        temperature=TEMPERATURE,
+    )
+)
+model_reload_lock = threading.RLock()
+model_reloading = False
+
+
+def apply_runtime_model_settings(settings: ModelRuntimeSettings) -> None:
+    global runtime_model_settings, MODEL_DIR, BASE_MODEL_PATH, LORA_ADAPTER_PATH
+    global LOCAL_FILES_ONLY, LOAD_IN_4BIT, MAX_NEW_TOKENS, TEMPERATURE
+    runtime_model_settings = settings
+    MODEL_DIR = resolve_server_path(settings.model_dir)
+    BASE_MODEL_PATH = settings.base_model_path.strip()
+    LORA_ADAPTER_PATH = settings.lora_adapter_path.strip()
+    LOCAL_FILES_ONLY = settings.local_files_only
+    LOAD_IN_4BIT = settings.load_in_4bit
+    MAX_NEW_TOKENS = settings.max_new_tokens
+    TEMPERATURE = settings.temperature
+
+
+apply_runtime_model_settings(runtime_model_settings)
 
 from fastapi.staticfiles import StaticFiles
 
@@ -179,12 +219,14 @@ def model_source() -> tuple[str, str | None]:
 
 @app.on_event("startup")
 def load_model_and_tokenizer() -> None:
-    global model, tokenizer, model_load_error
-    if os.getenv("OFFLINE_LLM_MOCK", "false").lower() == "true":
-        logger.info("OFFLINE_LLM_MOCK=true. Bypassing real Hugging Face weights loading.")
+    global model, tokenizer, model_load_error, model_reloading
+    model_reloading = True
+    if runtime_model_settings.mock_mode:
+        logger.info("Model mock mode enabled. Bypassing real Hugging Face weights loading.")
         model = "mock_model"
         tokenizer = "mock_tokenizer"
         model_load_error = None
+        model_reloading = False
         return
 
     try:
@@ -234,6 +276,8 @@ def load_model_and_tokenizer() -> None:
     except Exception as exc:
         model_load_error = str(exc)
         logger.exception("Offline LLM loading failed: %s", exc)
+    finally:
+        model_reloading = False
 
 
 @app.on_event("shutdown")
@@ -280,7 +324,7 @@ def active_model_name() -> str:
 
 
 def model_ready() -> bool:
-    return model is not None and model_load_error is None
+    return not model_reloading and model is not None and model_load_error is None
 
 
 def connection_payload() -> dict[str, object]:
@@ -372,13 +416,80 @@ def stop_local_tunnel(request: Request):
     tunnel_manager.stop()
     return connection_payload()
 
+
+@app.get("/v1/local/settings/model")
+def get_local_model_settings(request: Request):
+    require_local_request(request)
+    return {
+        "settings": runtime_model_settings.model_dump(),
+        "model_ready": model_ready(),
+        "reloading": model_reloading,
+        "load_error": model_load_error,
+        "active_model": active_model_name(),
+        "source": (
+            "Saved"
+            if model_settings_store.path.exists()
+            else "Environment / default"
+        ),
+    }
+
+
+@app.post("/v1/local/settings/model/test")
+def test_local_model_settings(
+    body: ModelRuntimeSettings, request: Request
+):
+    require_local_request(request)
+    try:
+        resolved = validate_model_settings(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "valid",
+        "message": "Model settings and local paths are valid.",
+        "resolved": resolved,
+    }
+
+
+@app.put("/v1/local/settings/model")
+def save_local_model_settings(
+    body: ModelRuntimeSettings, request: Request
+):
+    require_local_request(request)
+    try:
+        validate_model_settings(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    previous = runtime_model_settings.model_copy(deep=True)
+    with model_reload_lock:
+        apply_runtime_model_settings(body)
+        load_model_and_tokenizer()
+        if model_load_error:
+            candidate_error = model_load_error
+            apply_runtime_model_settings(previous)
+            load_model_and_tokenizer()
+            rollback_error = model_load_error
+            detail = f"Candidate model failed to load: {candidate_error}"
+            if rollback_error:
+                detail += f" Previous model also failed to restore: {rollback_error}"
+            raise HTTPException(status_code=400, detail=detail)
+        model_settings_store.save(body)
+
+    return {
+        "status": "saved",
+        "message": "Model settings loaded and saved.",
+        "settings": runtime_model_settings.model_dump(),
+        "model_ready": model_ready(),
+        "active_model": active_model_name(),
+    }
+
 @app.post("/v1/orchestration", response_model=BtpOrchestrationResponse)
 async def orchestration(
     request: BtpOrchestrationRequest,
     authorization: Optional[str] = Header(None),
 ) -> BtpOrchestrationResponse:
     require_api_key(authorization)
-    ai_mock = os.getenv("OFFLINE_LLM_MOCK", os.getenv("AI_MOCK", "true")).lower() == "true"
+    ai_mock = runtime_model_settings.mock_mode
     if ai_mock or (model is None and os.getenv("APP_ENV", "development") == "development"):
         import json
         content = json.dumps({
@@ -420,6 +531,11 @@ async def orchestration(
             )
         )
 
+    if model_reloading:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model settings are being reloaded.",
+        )
     if model is None or tokenizer is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -470,8 +586,6 @@ async def reload_model(
     authorization: Optional[str] = Header(None),
 ):
     require_api_key(authorization)
-    global MODEL_DIR, model, tokenizer, model_load_error
-
     new_dir = Path(request.model_dir)
     if not new_dir.is_absolute():
          new_dir = SERVER_DIR / new_dir
@@ -483,14 +597,20 @@ async def reload_model(
         )
 
     logger.info("Hot-reloading model from: %s", new_dir)
-    MODEL_DIR = new_dir
-    load_model_and_tokenizer()
-
-    if model_load_error:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to reload model: {model_load_error}",
-        )
+    previous = runtime_model_settings.model_copy(deep=True)
+    candidate = previous.model_copy(update={"model_dir": str(new_dir)})
+    with model_reload_lock:
+        apply_runtime_model_settings(candidate)
+        load_model_and_tokenizer()
+        if model_load_error:
+            candidate_error = model_load_error
+            apply_runtime_model_settings(previous)
+            load_model_and_tokenizer()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to reload model: {candidate_error}",
+            )
+        model_settings_store.save(candidate)
 
     return {"status": "success", "model_dir": str(MODEL_DIR)}
 
@@ -590,33 +710,37 @@ def list_versions(authorization: Optional[str] = Header(None)):
 @app.post("/v1/model/activate")
 async def activate_version(request: ActivateRequest, authorization: Optional[str] = Header(None)):
     require_api_key(authorization)
-    global MODEL_DIR
 
     versions_dir = SERVER_DIR / "versions"
     target_dir = versions_dir / request.version_name
     if not target_dir.exists() or not (target_dir / "adapter_config.json").exists():
         raise HTTPException(status_code=400, detail="Invalid version name or files missing.")
 
-    ACTIVE_VERSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-    ACTIVE_VERSION_FILE.write_text(
-        json.dumps(
-            {
-                "active_version": request.version_name,
-                "active_path": str(target_dir),
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
     logger.info("Activating version and reloading: %s", target_dir)
-    MODEL_DIR = target_dir
-    load_model_and_tokenizer()
-
-    if model_load_error:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Model activated but failed to reload: {model_load_error}",
+    previous = runtime_model_settings.model_copy(deep=True)
+    candidate = previous.model_copy(update={"model_dir": str(target_dir)})
+    with model_reload_lock:
+        apply_runtime_model_settings(candidate)
+        load_model_and_tokenizer()
+        if model_load_error:
+            candidate_error = model_load_error
+            apply_runtime_model_settings(previous)
+            load_model_and_tokenizer()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Model activation failed and was rolled back: {candidate_error}",
+            )
+        model_settings_store.save(candidate)
+        ACTIVE_VERSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ACTIVE_VERSION_FILE.write_text(
+            json.dumps(
+                {
+                    "active_version": request.version_name,
+                    "active_path": str(target_dir),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
         )
 
     return {"status": "success", "active_version": request.version_name}

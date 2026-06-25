@@ -18,6 +18,7 @@ data/
 *.log
 *.pid
 config/node_identity.json
+config/model_runtime_settings.json
 .tools/
 
 # Editor and OS files

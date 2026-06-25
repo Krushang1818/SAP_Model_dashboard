@@ -828,6 +828,44 @@
       </div>
     </section>
 
+    <section class="panel" style="border-top:4px solid var(--warning); margin-bottom:16px;">
+      <div class="panel-header">
+        <h2 class="panel-title">Local Model Settings</h2>
+        <span class="panel-badge" id="modelSettingsBadge" style="background:var(--muted);">LOADING</span>
+      </div>
+      <div class="panel-body">
+        <div class="factor-grid">
+          <div class="factor-card">
+            <div class="factor-topline">MODEL / ADAPTER DIRECTORY</div>
+            <input id="settingModelDir" type="text" style="width:100%;min-height:38px;padding:8px;border:1px solid var(--border-strong);border-radius:5px;font-family:var(--mono);">
+          </div>
+          <div class="factor-card">
+            <div class="factor-topline">BASE MODEL PATH OR NAME</div>
+            <input id="settingBaseModel" type="text" style="width:100%;min-height:38px;padding:8px;border:1px solid var(--border-strong);border-radius:5px;font-family:var(--mono);">
+          </div>
+          <div class="factor-card">
+            <div class="factor-topline">OPTIONAL ADAPTER OVERRIDE</div>
+            <input id="settingAdapterPath" type="text" style="width:100%;min-height:38px;padding:8px;border:1px solid var(--border-strong);border-radius:5px;font-family:var(--mono);">
+          </div>
+          <div class="factor-card">
+            <div class="factor-topline">GENERATION</div>
+            <label style="display:block;margin-bottom:6px;">Max tokens <input id="settingMaxTokens" type="number" min="1" max="8192" style="width:110px;margin-left:8px;"></label>
+            <label style="display:block;">Temperature <input id="settingTemperature" type="number" min="0" max="2" step="0.01" style="width:110px;margin-left:8px;"></label>
+          </div>
+        </div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:16px;">
+          <label><input id="settingMockMode" type="checkbox"> Mock-model mode</label>
+          <label><input id="settingLocalFiles" type="checkbox"> Local files only</label>
+          <label><input id="settingFourBit" type="checkbox"> Load in 4-bit</label>
+        </div>
+        <div id="modelSettingsMessage" class="message-strip info" style="display:none;margin-top:16px;"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+          <button class="button" type="button" onclick="testModelSettings()">Validate Settings</button>
+          <button class="button primary" id="saveModelSettingsButton" type="button" onclick="saveModelSettings()">Reload &amp; Save</button>
+        </div>
+      </div>
+    </section>
+
     <div class="review-layout">
       <!-- Left / Main Panel -->
       <div class="review-main">
@@ -984,6 +1022,7 @@
   <script>
     let apiKey = "";
     let connectionInfo = null;
+    let modelSettingsInfo = null;
     let pollInterval = null;
     let hardwareInfo = null;
 
@@ -1100,6 +1139,90 @@
         await loadConnectionPanel();
       } catch (error) {
         pairingMessage(error.message || 'Token rotation failed.', 'error');
+      }
+    }
+
+    function collectModelSettings() {
+      return {
+        model_dir: document.getElementById('settingModelDir').value.trim(),
+        base_model_path: document.getElementById('settingBaseModel').value.trim(),
+        lora_adapter_path: document.getElementById('settingAdapterPath').value.trim(),
+        mock_mode: document.getElementById('settingMockMode').checked,
+        local_files_only: document.getElementById('settingLocalFiles').checked,
+        load_in_4bit: document.getElementById('settingFourBit').checked,
+        max_new_tokens: Number(document.getElementById('settingMaxTokens').value),
+        temperature: Number(document.getElementById('settingTemperature').value)
+      };
+    }
+
+    function modelSettingsMessage(message, kind='info') {
+      const box = document.getElementById('modelSettingsMessage');
+      box.className = `message-strip ${kind}`;
+      box.textContent = message;
+      box.style.display = 'block';
+    }
+
+    async function loadModelSettings() {
+      try {
+        const res = await fetch('/v1/local/settings/model');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not load model settings');
+        modelSettingsInfo = data;
+        const settings = data.settings;
+        document.getElementById('settingModelDir').value = settings.model_dir || '';
+        document.getElementById('settingBaseModel').value = settings.base_model_path || '';
+        document.getElementById('settingAdapterPath').value = settings.lora_adapter_path || '';
+        document.getElementById('settingMockMode').checked = Boolean(settings.mock_mode);
+        document.getElementById('settingLocalFiles').checked = Boolean(settings.local_files_only);
+        document.getElementById('settingFourBit').checked = Boolean(settings.load_in_4bit);
+        document.getElementById('settingMaxTokens').value = settings.max_new_tokens;
+        document.getElementById('settingTemperature').value = settings.temperature;
+        const badge = document.getElementById('modelSettingsBadge');
+        badge.textContent = data.model_ready ? `${data.source.toUpperCase()} · READY` : 'MODEL NOT READY';
+        badge.style.background = data.model_ready ? 'var(--success)' : 'var(--error)';
+        if (data.load_error) modelSettingsMessage(data.load_error, 'error');
+      } catch (error) {
+        modelSettingsMessage(error.message || 'Could not load model settings.', 'error');
+      }
+    }
+
+    async function testModelSettings() {
+      try {
+        const res = await fetch('/v1/local/settings/model/test', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(collectModelSettings())
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Model settings are invalid');
+        modelSettingsMessage(data.message, 'success');
+      } catch (error) {
+        modelSettingsMessage(error.message || 'Model settings are invalid.', 'error');
+      }
+    }
+
+    async function saveModelSettings() {
+      const button = document.getElementById('saveModelSettingsButton');
+      button.disabled = true;
+      button.textContent = 'Reloading model…';
+      modelSettingsMessage('Loading the candidate model. Previous settings will be restored automatically if it fails.', 'info');
+      try {
+        const res = await fetch('/v1/local/settings/model', {
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(collectModelSettings())
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Model reload failed');
+        modelSettingsMessage(data.message, 'success');
+        await loadModelSettings();
+        await loadConnectionPanel();
+      } catch (error) {
+        modelSettingsMessage(error.message || 'Model reload failed and was rolled back.', 'error');
+        await loadModelSettings();
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Reload & Save';
       }
     }
 
@@ -1387,6 +1510,7 @@
     // Initialize Page
     document.addEventListener('DOMContentLoaded', () => {
       loadConnectionPanel().then(() => {
+        loadModelSettings();
         loadHardwareTelemetry();
         loadModelVersions();
       });
