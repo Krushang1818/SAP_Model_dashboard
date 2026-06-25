@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Model Node Dashboard | VirtuCEO</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/brand/virtuceo-favicon.png?v=3">
+  <link rel="shortcut icon" type="image/png" href="/static/brand/virtuceo-favicon.png?v=3">
+  <link rel="apple-touch-icon" href="/static/brand/virtuceo-favicon.png?v=3">
+  <style>
+    :root {
+      --brand-blue: #2b64d1;
+      --brand-blue-dark: #1548a3;
+      --brand-blue-deep: #0c2563;
+      --charcoal: #343535;
+      --charcoal-dark: #202225;
+      --shell: var(--brand-blue);
+      --shell-dark: var(--brand-blue-dark);
+      --shell-light: #eef5ff;
+      --page: #f4f7fb;
+      --surface: #ffffff;
+      --surface-muted: #f8fbff;
+      --text: #20242a;
+      --muted: #667085;
+      --border: #d9e2ef;
+      --border-strong: #9aaac1;
+      --success: #16845a;
+      --success-bg: #edf8f3;
+      --warning: #b86e00;
+      --warning-bg: #fff4df;
+      --error: #c0342d;
+      --error-bg: #fff1f0;
+      --info: var(--brand-blue);
+      --info-bg: #eef5ff;
+      --accent: var(--brand-blue);
+      --accent-dark: var(--brand-blue-dark);
+      --accent-bg: #eef5ff;
+      --focus: rgba(43, 100, 209, .22);
+      --shadow: 0 10px 28px rgba(32, 34, 37, 0.09);
+      --shadow-soft: 0 2px 9px rgba(32, 34, 37, 0.07);
+      --font: "72", "Segoe UI", Arial, sans-serif;
+      --mono: "72 Mono", "Cascadia Mono", Consolas, monospace;
+      --ease-out: cubic-bezier(.16, 1, .3, 1);
+      --ease-soft: cubic-bezier(.2, .8, .2, 1);
+      --duration-fast: 160ms;
+      --duration-med: 280ms;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background:
+        linear-gradient(180deg, rgba(43, 100, 209, 0.10) 0, rgba(244, 247, 251, 0) 235px),
+        var(--page);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    a {
+      color: var(--shell);
+      text-decoration: none;
+    }
+
+    button {
+      font-family: inherit;
+    }
+
+    /* Shellbar Header */
+    .shellbar {
+      min-height: 64px;
+      padding: 0 24px;
+      background: rgba(255, 255, 255, .96);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      box-shadow: 0 8px 24px rgba(32, 34, 37, 0.09);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+      text-decoration: none;
+      min-width: 260px;
+    }
+
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      border: 1px solid var(--border);
+      display: grid;
+      place-items: center;
+      background: #fff;
+      box-shadow: 0 4px 14px rgba(43, 100, 209, .13);
+      overflow: hidden;
+      border-radius: 8px;
+      flex: 0 0 auto;
+    }
+
+    .brand-logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .brand-copy {
+      line-height: 1.1;
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--charcoal-dark);
+    }
+
+    .brand-subtitle {
+      margin-top: 3px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .shell-context {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 16px;
+      font-size: 12px;
+      white-space: nowrap;
+      color: #485466;
+    }
+
+    .context-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      opacity: .95;
+    }
+
+    .system-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 3px rgba(22, 132, 90, 0.16);
+      transition: background-color var(--duration-fast), box-shadow var(--duration-fast);
+    }
+
+    .system-dot.offline {
+      background: var(--error);
+      box-shadow: 0 0 0 3px rgba(192, 52, 45, 0.16);
+    }
+
+    .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--shell-light);
+      color: var(--brand-blue-dark);
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* Navigation Strip */
+    .nav-strip {
+      min-height: 42px;
+      padding: 0 24px;
+      background: var(--charcoal-dark);
+      border-bottom: 1px solid rgba(255, 255, 255, .10);
+      display: flex;
+      align-items: stretch;
+      gap: 4px;
+      box-shadow: 0 6px 18px rgba(32, 34, 37, 0.14);
+    }
+
+    .nav-link {
+      color: rgba(255, 255, 255, .78);
+      text-decoration: none;
+      padding: 0 16px;
+      display: inline-flex;
+      align-items: center;
+      border-bottom: 3px solid transparent;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+    }
+
+    .nav-link.active {
+      border-bottom-color: var(--brand-blue);
+      color: #fff;
+      background: rgba(255, 255, 255, .08);
+    }
+
+    /* Main Container layout */
+    .page {
+      width: min(1560px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 22px 0 40px;
+    }
+
+    .breadcrumb {
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .breadcrumb span {
+      padding: 0 6px;
+      color: #98a2b3;
+    }
+
+    /* Hero panel */
+    .dashboard-hero {
+      margin-bottom: 16px;
+      min-height: 218px;
+      padding: 22px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 390px;
+      gap: 22px;
+      align-items: stretch;
+      color: #f7faff;
+      background:
+        linear-gradient(135deg, rgba(32, 34, 37, .98), rgba(52, 53, 53, .94) 55%, rgba(21, 72, 163, .92)),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, .055) 0 1px, transparent 1px 44px);
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 8px;
+      box-shadow: 0 18px 45px rgba(32, 34, 37, 0.22);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .dashboard-hero::before {
+      content: "";
+      position: absolute;
+      inset: 16px 28px 16px auto;
+      width: 220px;
+      background: url("/static/brand/virtuceo-mark-transparent.png") center / contain no-repeat;
+      opacity: .14;
+      pointer-events: none;
+    }
+
+    .dashboard-hero::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--brand-blue), #6ea1ff, #ffffff);
+    }
+
+    .dashboard-hero-main {
+      min-width: 0;
+      display: grid;
+      align-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-kicker {
+      width: fit-content;
+      margin-bottom: 10px;
+      padding: 4px 9px;
+      border: 1px solid rgba(255, 255, 255, .18);
+      background: rgba(255, 255, 255, .08);
+      color: #dce8ff;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .dashboard-hero h1 {
+      color: #fff;
+      font-size: 32px;
+      line-height: 1.12;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .dashboard-hero p {
+      max-width: 760px;
+      margin: 11px 0 0;
+      color: rgba(247, 250, 255, .78);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .dashboard-hero-side {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-stat {
+      min-height: 58px;
+      padding: 11px 12px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      background: rgba(255, 255, 255, .10);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 3px 14px;
+      align-items: baseline;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+    }
+
+    .hero-stat span {
+      color: rgba(247, 250, 255, .74);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .hero-stat strong {
+      color: #fff;
+      font-size: 20px;
+      line-height: 1;
+      justify-self: end;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 250px;
+    }
+
+    .hero-stat em {
+      grid-column: 1 / -1;
+      color: rgba(247, 250, 255, .68);
+      font-style: normal;
+      font-size: 12px;
+    }
+
+    /* Core grid structure */
+    .review-layout {
+      display: grid;
+      grid-template-columns: 1fr 390px;
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 1024px) {
+      .review-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .review-main {
+      min-width: 0;
+    }
+
+    .decision-column {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Panels & components */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .panel-header {
+      min-height: 48px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff 0, var(--surface-muted) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--charcoal-dark);
+    }
+
+    .panel-badge {
+      min-height: 24px;
+      padding: 4px 9px;
+      background: var(--charcoal-dark);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-radius: 4px;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .panel-body.flush {
+      padding: 0;
+    }
+
+    .factor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+      margin-bottom: 16px;
+    }
+
+    .factor-card {
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 12px;
+      border-top: 3px solid var(--brand-blue);
+      box-shadow: var(--shadow-soft);
+      text-align: left;
+    }
+
+    .factor-topline {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .factor-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--charcoal-dark);
+      line-height: 1.1;
+      margin-bottom: 4px;
+    }
+
+    .factor-label {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Buttons */
+    .button {
+      min-height: 34px;
+      padding: 0 16px;
+      border: 1px solid var(--shell);
+      border-radius: 4px;
+      background: #fff;
+      color: var(--shell);
+      font-weight: 600;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      text-decoration: none;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+      transition: all var(--duration-fast) var(--ease-out);
+    }
+
+    .button:hover:not(:disabled) {
+      background: var(--shell-light);
+      border-color: var(--shell-dark);
+    }
+
+    .button.primary {
+      background: var(--shell);
+      color: #fff;
+      box-shadow: 0 6px 14px rgba(43, 100, 209, 0.24);
+    }
+
+    .button.primary:hover:not(:disabled) {
+      background: var(--shell-dark);
+    }
+
+    .button.negative {
+      background: #fff;
+      border-color: var(--error);
+      color: var(--error);
+      box-shadow: none;
+    }
+
+    .button.negative:hover:not(:disabled) {
+      background: var(--error-bg);
+      border-color: var(--error);
+    }
+
+    .button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    /* Terminal Console logs */
+    .terminal {
+      background: #111827;
+      color: #10b981;
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 16px;
+      min-height: 300px;
+      max-height: 420px;
+      overflow-y: auto;
+      line-height: 1.5;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.8);
+      border-bottom-left-radius: 6px;
+      border-bottom-right-radius: 6px;
+    }
+
+    .terminal-line {
+      margin-bottom: 4px;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+
+    .terminal-line.system { color: #93c5fd; }
+    .terminal-line.train { color: #fde047; }
+    .terminal-line.success { color: #86efac; }
+    .terminal-line.error { color: #f87171; }
+    .terminal-line.muted { color: #6b7280; font-style: italic; }
+
+    /* Tables */
+    .key-value-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      background: var(--surface);
+    }
+
+    .key-value {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+    }
+
+    .key-value:last-child {
+      border-bottom: 0;
+    }
+
+    .key-value .key {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .key-value .value {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* Versions table */
+    .version-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .version-table th {
+      padding: 12px 16px;
+      border-bottom: 2px solid var(--border);
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      background: var(--surface-muted);
+    }
+
+    .version-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .version-row:hover {
+      background: var(--surface-muted);
+    }
+
+    .active-badge {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid #9fd8b5;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    /* Checklist */
+    .confidence-card {
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+    }
+
+    .confidence-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .confidence-meta span {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .confidence-meta strong {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .confidence-track {
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 9999px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .confidence-track span {
+      display: block;
+      height: 100%;
+      background: var(--brand-blue);
+      border-radius: 9999px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .confidence-track.success span { background: var(--success); }
+    .confidence-track.warning span { background: var(--warning); }
+    .confidence-track.error span { background: var(--error); }
+
+    .subtext {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .check-list {
+      display: grid;
+      gap: 9px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .check-list li {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr);
+      gap: 8px;
+      line-height: 1.4;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .check-list li::before {
+      content: "✓";
+      color: var(--success);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .check-list li.warning::before {
+      content: "!";
+      color: var(--warning);
+      font-weight: 700;
+    }
+
+    .check-list li.error::before {
+      content: "×";
+      color: var(--error);
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    /* Custom progress bar in Retraining Panel */
+    .training-progress-container {
+      margin-top: 14px;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .progress-track {
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 9999px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--brand-blue), #6ea1ff);
+      width: 0%;
+      border-radius: 9999px;
+      transition: width 0.4s ease;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.5; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header Shellbar -->
+  <div class="shellbar">
+    <a class="brand" href="/">
+      <div class="brand-mark">
+        <img class="brand-logo" src="/static/brand/virtuceo-logo.png" alt="VirtuCEO logo">
+      </div>
+      <div class="brand-copy">
+        <div class="brand-title">VirtuCEO</div>
+        <div class="brand-subtitle">Accounts Payable LLM Node</div>
+      </div>
+    </a>
+    <div class="shell-context">
+      <div class="context-item">
+        <span class="system-dot" id="serviceHealthDot"></span>
+        <span id="serviceHealthText">ONLINE</span>
+      </div>
+      <div class="avatar" title="Model Server Agent">AI</div>
+    </div>
+  </div>
+
+  <!-- Navigation bar -->
+  <div class="nav-strip">
+    <a href="#" class="nav-link active">MODEL RETRAINING COCKPIT</a>
+  </div>
+
+  <!-- Page Main Content -->
+  <div class="page">
+    <div class="breadcrumb">Accounts Payable <span>/</span> Model Management Node Dashboard</div>
+
+    <section class="dashboard-hero">
+      <div class="dashboard-hero-main">
+        <div class="hero-kicker">VirtuCEO LLM Control Cockpit</div>
+        <h1>Model Server Administration</h1>
+        <p>Monitor your offline QLoRA adapters, trigger custom retraining on human-verified AP matching outcomes, and view live training metrics and logs.</p>
+      </div>
+      <div class="dashboard-hero-side">
+        <div class="hero-stat">
+          <span>Active Model</span>
+          <strong id="valActiveModelHero">Loading...</strong>
+          <em id="valActiveModelSub">custom-invoice-llm</em>
+        </div>
+        <div class="hero-stat">
+          <span>Node Status</span>
+          <strong id="badgeActiveStatusHero">IDLE</strong>
+          <em>Hugging Face training worker</em>
+        </div>
+      </div>
+    </section>
+
+    <div class="review-layout">
+      <!-- Left / Main Panel -->
+      <div class="review-main">
+        <!-- Retraining Monitor -->
+        <div class="panel" style="border-top: 4px solid var(--brand-blue);">
+          <div class="panel-header">
+            <h2 class="panel-title">Model Retraining Progress Monitor</h2>
+            <span class="panel-badge" id="badgeActiveStatus">IDLE</span>
+          </div>
+          <div class="panel-body">
+            <div class="factor-grid">
+              <div class="factor-card" style="border-top-color: var(--brand-blue);">
+                <div class="factor-topline">CURRENT EPOCH</div>
+                <div class="factor-value" id="valEpoch">1</div>
+                <div class="factor-label">Of training run</div>
+              </div>
+              <div class="factor-card" style="border-top-color: var(--warning);">
+                <div class="factor-topline">TRAINING LOSS</div>
+                <div class="factor-value" id="valLoss">—</div>
+                <div class="factor-label">Lower is better</div>
+              </div>
+              <div class="factor-card" style="border-top-color: var(--success);">
+                <div class="factor-topline">TIME ELAPSED</div>
+                <div class="factor-value" id="valElapsed">0.0s</div>
+                <div class="factor-label">Since process start</div>
+              </div>
+            </div>
+
+            <!-- Dynamic progress section -->
+            <div class="training-progress-container" id="progressSection" style="display: none;">
+              <div class="progress-meta">
+                <span>Fine-Tuning Progress</span>
+                <span id="lblProgressPct">0.0%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" id="barProgress"></div>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px;">
+                <span>Phase: SFT adapter training</span>
+                <span id="lblRemaining">Est. remaining: —</span>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; align-items: center; margin-top: 16px;">
+              <button class="button negative" id="btnCancel" onclick="cancelTraining()" disabled>
+                Cancel Retraining Run
+              </button>
+              <span id="lblIndicators" style="display: none; font-size: 12px; font-weight: 600; color: var(--brand-blue);">
+                <span class="system-dot" style="display: inline-block; margin-right: 6px; animation: pulse 1.5s infinite;"></span>
+                Aborting background execution...
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal Panel -->
+        <div class="panel" style="border-top: 4px solid var(--charcoal);">
+          <div class="panel-header">
+            <h2 class="panel-title">Hugging Face Console Outputs</h2>
+            <span class="panel-badge" style="background: var(--muted);">Live Logs</span>
+          </div>
+          <div class="panel-body flush">
+            <div class="terminal" id="terminalConsole">
+              <div class="terminal-line muted">Initializing console interface... Connection established.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Model Versions -->
+        <div class="panel" style="border-top: 4px solid var(--success);">
+          <div class="panel-header">
+            <h2 class="panel-title">Available Model Versions</h2>
+            <span class="panel-badge" style="background: var(--success);">versions/</span>
+          </div>
+          <div class="panel-body flush">
+            <table class="version-table">
+              <thead>
+                <tr>
+                  <th>Version Name</th>
+                  <th>Created At</th>
+                  <th>Directory Path</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="versionTableBody">
+                <tr>
+                  <td colspan="5" style="text-align: center; color: var(--muted); padding: 24px;">Loading version list...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right / Sidebar Column -->
+      <div class="decision-column">
+        <!-- Hardware Capabilities -->
+        <div class="panel" style="border-top: 4px solid var(--brand-blue-deep);">
+          <div class="panel-header">
+            <h2 class="panel-title">Hardware Capabilities</h2>
+          </div>
+          <div class="panel-body">
+            <div class="confidence-card" style="margin-bottom: 16px;">
+              <div class="confidence-meta">
+                <span>Hardware Profile</span>
+                <strong id="lblHardwareStatus">—</strong>
+              </div>
+              <div class="confidence-track" id="trackHardwareStatus">
+                <span id="barHardwareStatus"></span>
+              </div>
+              <span class="subtext" id="lblHardwareDesc">Detecting system components...</span>
+            </div>
+
+            <ul class="check-list" id="hardwareChecklist">
+              <li id="liGPU" class="warning">Checking GPU acceleration...</li>
+              <li id="liVRAM" class="warning">Checking VRAM capacity...</li>
+              <li id="liRAM" class="warning">Checking system RAM...</li>
+              <li id="liCores" class="warning">Checking CPU cores...</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Active dataset info -->
+        <div class="panel" style="border-top: 4px solid var(--warning);">
+          <div class="panel-header">
+            <h2 class="panel-title">Adapter Specifications</h2>
+          </div>
+          <div class="panel-body flush">
+            <div class="key-value-grid">
+              <div class="key-value">
+                <div class="key">BASE MODEL</div>
+                <div class="value" style="font-size:12px; font-family:var(--mono);">Qwen-2.5-7B</div>
+              </div>
+              <div class="key-value">
+                <div class="key">PEFT TYPE</div>
+                <div class="value">QLoRA / LoRA</div>
+              </div>
+              <div class="key-value">
+                <div class="key">ADAPTER ALPHA</div>
+                <div class="value">32</div>
+              </div>
+              <div class="key-value">
+                <div class="key">ADAPTER RANK (R)</div>
+                <div class="value">16</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const apiKey = "{{ api_key }}";
+    let pollInterval = null;
+    let hardwareInfo = null;
+
+    function getHeaders() {
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey && apiKey !== "") {
+        headers['Authorization'] = 'Bearer ' + apiKey;
+      }
+      return headers;
+    }
+
+    async function loadHardwareTelemetry() {
+      try {
+        const res = await fetch('/v1/model/info', { headers: getHeaders() });
+        if (!res.ok) throw new Error("Could not load hardware details");
+        const data = await res.json();
+        
+        hardwareInfo = data;
+        
+        // Render Telemetry checklist
+        const liGPU = document.getElementById('liGPU');
+        const liVRAM = document.getElementById('liVRAM');
+        const liRAM = document.getElementById('liRAM');
+        const liCores = document.getElementById('liCores');
+
+        // CPU cores checklist
+        liCores.className = data.cpu_cores >= 8 ? '' : 'warning';
+        liCores.textContent = `${data.cpu_cores} Physical CPU Cores detected`;
+
+        // System RAM checklist
+        liRAM.className = data.ram_gb >= 16 ? '' : 'warning';
+        liRAM.textContent = `${data.ram_gb.toFixed(1)} GB System RAM detected`;
+        
+        if (data.device_type === 'GPU') {
+          liGPU.className = '';
+          liGPU.textContent = `NVIDIA GPU Active: ${data.gpu_name}`;
+          
+          liVRAM.className = data.vram_gb >= 14 ? '' : (data.vram_gb >= 11 ? 'warning' : 'error');
+          liVRAM.textContent = `${data.vram_gb.toFixed(1)} GB Dedicated GPU VRAM`;
+        } else {
+          liGPU.className = 'error';
+          liGPU.textContent = 'NVIDIA GPU Acceleration not found';
+          
+          liVRAM.className = 'error';
+          liVRAM.textContent = '0.0 GB Dedicated VRAM';
+        }
+
+        // Hardware Profile status
+        const lblStatus = document.getElementById('lblHardwareStatus');
+        const fillBar = document.getElementById('barHardwareStatus');
+        const track = document.getElementById('trackHardwareStatus');
+        const lblDesc = document.getElementById('lblHardwareDesc');
+
+        if (data.device_type === 'GPU') {
+          if (data.hardware_status === 'EXCELLENT') {
+            lblStatus.textContent = 'EXCELLENT';
+            lblStatus.style.color = 'var(--success)';
+            track.className = 'confidence-track success';
+            fillBar.style.width = '100%';
+            lblDesc.textContent = 'High-end NVIDIA GPU with large VRAM. Fine-tuning runs at peak speeds.';
+          } else if (data.hardware_status === 'GOOD') {
+            lblStatus.textContent = 'GOOD';
+            lblStatus.style.color = 'var(--success)';
+            track.className = 'confidence-track success';
+            fillBar.style.width = '80%';
+            lblDesc.textContent = 'Compatible NVIDIA accelerator. Fine-tuning will complete efficiently.';
+          } else if (data.hardware_status === 'COMPATIBLE') {
+            lblStatus.textContent = 'COMPATIBLE';
+            lblStatus.style.color = 'var(--warning)';
+            track.className = 'confidence-track warning';
+            fillBar.style.width = '60%';
+            lblDesc.textContent = 'GPU is compatible, but VRAM is narrow. Avoid multitasking during training.';
+          } else {
+            lblStatus.textContent = 'OOM RISK';
+            lblStatus.style.color = 'var(--error)';
+            track.className = 'confidence-track error';
+            fillBar.style.width = '40%';
+            lblDesc.textContent = 'NVIDIA GPU active, but VRAM is below 11GB. High risk of Out-Of-Memory.';
+          }
+        } else {
+          lblStatus.textContent = 'CPU RETRY';
+          lblStatus.style.color = 'var(--error)';
+          track.className = 'confidence-track error';
+          fillBar.style.width = '20%';
+          lblDesc.textContent = 'No CUDA GPU detected. Retraining will run extremely slow on CPU cores.';
+        }
+
+        // Handle training state
+        handleStateUpdate(data.status);
+      } catch (err) {
+        console.error(err);
+        setOfflineState();
+      }
+    }
+
+    function setOfflineState() {
+      const dot = document.getElementById('serviceHealthDot');
+      dot.className = 'system-dot offline';
+      document.getElementById('serviceHealthText').textContent = 'OFFLINE';
+      
+      const badge = document.getElementById('badgeActiveStatus');
+      badge.textContent = 'OFFLINE';
+      badge.style.background = 'var(--error)';
+      
+      const heroBadge = document.getElementById('badgeActiveStatusHero');
+      heroBadge.textContent = 'OFFLINE';
+    }
+
+    async function loadModelVersions() {
+      try {
+        const res = await fetch('/v1/model/versions', { headers: getHeaders() });
+        if (!res.ok) throw new Error("Could not fetch adapter versions");
+        const data = await res.json();
+        
+        const activeVersion = data.active_version;
+        const activeName = activeVersion ? activeVersion : 'Qwen-2.5-7B-Instruct (Base)';
+        document.getElementById('valActiveModelHero').textContent = activeName;
+
+        const tbody = document.getElementById('versionTableBody');
+        tbody.innerHTML = '';
+
+        if (!data.versions || data.versions.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--muted); padding:24px;">No adapter versions found.</td></tr>`;
+          return;
+        }
+
+        data.versions.forEach(ver => {
+          const row = document.createElement('tr');
+          row.className = 'version-row';
+          
+          const statusCol = ver.active ? '<span class="active-badge">Active</span>' : '<span style="color: var(--muted);">Inactive</span>';
+          const actionCol = ver.active 
+            ? `<button class="button" disabled style="opacity: 0.5; cursor: not-allowed; min-height: 28px; padding: 0 10px; font-size:11px;">Activated</button>` 
+            : `<button class="button primary" style="min-height: 28px; padding: 0 10px; font-size: 11px;" onclick="activateVersion('${ver.version_name}')">Activate</button>`;
+
+          row.innerHTML = `
+            <td style="font-weight: 600; color: var(--charcoal-dark);">${ver.version_name}</td>
+            <td>${ver.created_at}</td>
+            <td style="font-family: var(--mono); font-size: 11px; color: var(--muted);">${ver.path}</td>
+            <td>${statusCol}</td>
+            <td>${actionCol}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function activateVersion(versionName) {
+      try {
+        const res = await fetch('/v1/model/activate', {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({ version_name: versionName })
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || "Activation failed");
+        }
+        
+        loadModelVersions();
+      } catch (err) {
+        alert("Error activating version: " + err.message);
+      }
+    }
+
+    async function cancelTraining() {
+      const btn = document.getElementById('btnCancel');
+      btn.disabled = true;
+      document.getElementById('lblIndicators').style.display = 'inline';
+
+      try {
+        const res = await fetch('/v1/model/cancel', {
+          method: 'POST',
+          headers: getHeaders()
+        });
+        if (!res.ok) throw new Error("Failed to abort background training process");
+      } catch (err) {
+        alert("Cancellation failed: " + err.message);
+        btn.disabled = false;
+        document.getElementById('lblIndicators').style.display = 'none';
+      }
+    }
+
+    function handleStateUpdate(status) {
+      const badge = document.getElementById('badgeActiveStatus');
+      const heroBadge = document.getElementById('badgeActiveStatusHero');
+      
+      badge.textContent = status;
+      heroBadge.textContent = status;
+
+      if (status === 'TRAINING') {
+        badge.style.background = 'var(--brand-blue)';
+        document.getElementById('btnCancel').disabled = false;
+        document.getElementById('lblIndicators').style.display = 'none';
+        document.getElementById('progressSection').style.display = 'block';
+        
+        if (!pollInterval) {
+          pollInterval = setInterval(pollStatus, 1500);
+        }
+      } else {
+        document.getElementById('btnCancel').disabled = true;
+        document.getElementById('lblIndicators').style.display = 'none';
+        document.getElementById('progressSection').style.display = 'none';
+        
+        if (status === 'COMPLETED') {
+          badge.style.background = 'var(--success)';
+        } else if (status === 'FAILED') {
+          badge.style.background = 'var(--error)';
+        } else {
+          badge.style.background = 'var(--charcoal)';
+        }
+
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+          loadModelVersions();
+        }
+      }
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch('/v1/model/status', { headers: getHeaders() });
+        if (!res.ok) throw new Error("Status poll failed");
+        const data = await res.json();
+
+        handleStateUpdate(data.status);
+
+        document.getElementById('valEpoch').textContent = data.epoch;
+        document.getElementById('valLoss').textContent = data.loss ? data.loss.toFixed(4) : '—';
+        document.getElementById('valElapsed').textContent = data.elapsed_seconds.toFixed(1) + 's';
+
+        if (data.status === 'TRAINING') {
+          const pct = data.progress || 0;
+          document.getElementById('lblProgressPct').textContent = pct.toFixed(1) + '%';
+          document.getElementById('barProgress').style.width = pct + '%';
+          
+          if (data.estimated_remaining_seconds !== null) {
+            document.getElementById('lblRemaining').textContent = 'Est. remaining: ' + data.estimated_remaining_seconds.toFixed(1) + 's';
+          } else {
+            document.getElementById('lblRemaining').textContent = 'Est. remaining: Calculating...';
+          }
+        }
+
+        const term = document.getElementById('terminalConsole');
+        if (data.logs && data.logs.length > 0) {
+          let html = '';
+          data.logs.forEach(line => {
+            let className = '';
+            if (line.includes('[ERROR]') || line.includes('failed')) {
+              className = 'error';
+            } else if (line.includes('[SYSTEM]')) {
+              className = 'system';
+            } else if (line.includes('[HF-TRAIN]') || line.includes('Step')) {
+              className = 'train';
+            } else if (line.includes('complete') || line.includes('successfully')) {
+              className = 'success';
+            } else {
+              className = '';
+            }
+            html += `<div class="terminal-line ${className}">${escapeHtml(line)}</div>`;
+          });
+          term.innerHTML = html;
+          term.scrollTop = term.scrollHeight;
+        } else {
+          term.innerHTML = `<div class="terminal-line muted">Waiting for training logs to stream...</div>`;
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Initialize Page
+    document.addEventListener('DOMContentLoaded', () => {
+      loadHardwareTelemetry();
+      loadModelVersions();
+      
+      setInterval(() => {
+        if (!pollInterval) {
+          loadHardwareTelemetry();
+          loadModelVersions();
+        }
+      }, 5000);
+    });
+  </script>
+</body>
+</html>

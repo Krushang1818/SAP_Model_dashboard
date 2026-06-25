@@ -1,0 +1,21 @@
+services:
+  model_server:
+    build: .
+    container_name: sap_model_server
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./versions:/app/versions
+      - ./config:/app/config
+    # Pass GPU resources to the container
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
