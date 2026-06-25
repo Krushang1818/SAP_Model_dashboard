@@ -17,14 +17,6 @@ data/
 *.sqlite3
 *.log
 
-# Trained models and checkpoints
-versions/
-checkpoints/
-*.safetensors
-*.pt
-*.pth
-*.bin
-
 # Editor and OS files
 .vscode/
 .idea/
