@@ -43,7 +43,6 @@ def env_bool(name: str, default: bool) -> bool:
 from trainer import ModelServerTrainer
 from connection_manager import (
     NodeIdentityStore,
-    local_ipv4_addresses,
     pairing_link,
     require_local_request,
     require_node_token,
@@ -285,33 +284,11 @@ def model_ready() -> bool:
 
 
 def connection_payload() -> dict[str, object]:
-    lan_links = [
-        {
-            "address": address,
-            "base_url": f"http://{address}:{SERVER_PORT}",
-            "pairing_link": pairing_link(
-                f"http://{address}:{SERVER_PORT}", identity.token
-            ),
-        }
-        for address in local_ipv4_addresses()
-    ]
-    configured_public_url = os.getenv("CLOUDFLARE_PUBLIC_URL", "").strip().rstrip("/")
     tunnel_status = tunnel_manager.status()
     active_public_url = str(tunnel_status.get("public_url") or "").rstrip("/")
     return {
         "node_id": identity.node_id,
         "api_token": identity.token,
-        "local_base_url": f"http://127.0.0.1:{SERVER_PORT}",
-        "local_pairing_link": pairing_link(
-            f"http://127.0.0.1:{SERVER_PORT}", identity.token
-        ),
-        "lan_links": lan_links,
-        "configured_public_url": configured_public_url or None,
-        "configured_public_pairing_link": (
-            pairing_link(configured_public_url, identity.token)
-            if configured_public_url
-            else None
-        ),
         "active_tunnel_pairing_link": (
             pairing_link(active_public_url, identity.token)
             if active_public_url
@@ -376,9 +353,6 @@ def get_local_tunnel_status(request: Request):
     return {
         "tunnel": payload["tunnel"],
         "active_tunnel_pairing_link": payload["active_tunnel_pairing_link"],
-        "configured_public_pairing_link": payload[
-            "configured_public_pairing_link"
-        ],
     }
 
 

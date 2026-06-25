@@ -16,17 +16,8 @@ Standalone PC2 model server for inference, retraining, model activation, and sec
 .\start_model_server.ps1
 ```
 
-The launcher opens `http://127.0.0.1:8001/`. Use the connection panel to copy a LAN link, start a temporary Quick Tunnel, or start a configured permanent Cloudflare Tunnel.
+The launcher opens `http://127.0.0.1:8001/`. Select **Start Quick Internet Tunnel**, then copy the generated pairing link into PC1 Settings.
 
 The node ID and bearer token are generated on first start in ignored `config/node_identity.json`. Rotating the token invalidates every previously copied pairing link.
 
-## Permanent Cloudflare Tunnel
-
-Create a remotely managed tunnel and public hostname in Cloudflare, routing it to `http://localhost:8001`. Set these values in `.env`:
-
-```dotenv
-CLOUDFLARE_TUNNEL_TOKEN=...
-CLOUDFLARE_PUBLIC_URL=https://model.example.com
-```
-
-The public tunnel exposes only token-protected model APIs. The dashboard and tunnel/token management endpoints accept local PC2 requests only.
+The temporary Cloudflare URL changes whenever the Quick Tunnel is restarted. The public tunnel exposes only token-protected model APIs; the dashboard and tunnel/token management endpoints accept local PC2 requests only.

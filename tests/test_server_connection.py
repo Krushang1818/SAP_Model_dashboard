@@ -60,4 +60,6 @@ def test_dashboard_and_local_api_are_local_only():
     local_client = TestClient(server.app, client=("127.0.0.1", 50000))
     response = local_client.get("/v1/local/connection")
     assert response.status_code == 200
-    assert "#token=" in response.json()["local_pairing_link"]
+    assert "active_tunnel_pairing_link" in response.json()
+    assert "lan_links" not in response.json()
+    assert "configured_public_pairing_link" not in response.json()

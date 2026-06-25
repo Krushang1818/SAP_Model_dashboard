@@ -43,26 +43,13 @@ def test_quick_tunnel_parses_public_url(monkeypatch, tmp_path):
     assert stopped["running"] is False
 
 
-def test_named_tunnel_uses_environment_token_without_command_argument(
-    monkeypatch, tmp_path
-):
+def test_named_tunnel_is_rejected(monkeypatch, tmp_path):
     executable = tmp_path / "cloudflared.exe"
     executable.write_bytes(b"test")
     manager = TunnelManager(server_port=8001)
     monkeypatch.setattr(manager, "cloudflared_path", lambda: str(executable))
-    monkeypatch.setenv("CLOUDFLARE_TUNNEL_TOKEN", "named-secret")
-    monkeypatch.setenv("CLOUDFLARE_PUBLIC_URL", "https://model.example.com")
-    captured = {}
-
-    def fake_popen(command, **kwargs):
-        captured["command"] = command
-        captured["env"] = kwargs["env"]
-        return FakeProcess([])
-
-    monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("tunnel_manager.time.sleep", lambda seconds: None)
-
-    status = manager.start("named")
-    assert status["public_url"] == "https://model.example.com"
-    assert "named-secret" not in captured["command"]
-    assert captured["env"]["TUNNEL_TOKEN"] == "named-secret"
+    try:
+        manager.start("named")
+        assert False, "named mode should be rejected"
+    except ValueError as exc:
+        assert "Only Quick Internet Tunnel" in str(exc)

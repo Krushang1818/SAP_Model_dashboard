@@ -1,4 +1,4 @@
-"""Manage Cloudflare Quick and named tunnels as PC2 child processes."""
+"""Manage the Cloudflare Quick Tunnel as a PC2 child process."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import threading
-import time
 from pathlib import Path
 
 SERVER_DIR = Path(__file__).resolve().parent
@@ -52,16 +51,12 @@ class TunnelManager:
                 "public_url": self._public_url,
                 "error": self._last_error,
                 "recent_logs": self._logs[-20:],
-                "named_configured": bool(
-                    os.getenv("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
-                    and os.getenv("CLOUDFLARE_PUBLIC_URL", "").strip()
-                ),
             }
 
     def start(self, mode: str) -> dict[str, object]:
         mode = (mode or "").strip().lower()
-        if mode not in {"quick", "named"}:
-            raise ValueError("Tunnel mode must be 'quick' or 'named'.")
+        if mode != "quick":
+            raise ValueError("Only Quick Internet Tunnel mode is supported.")
 
         executable = self.cloudflared_path()
         if not executable:
@@ -89,18 +84,7 @@ class TunnelManager:
                 "http2",
             ]
             child_env = os.environ.copy()
-            if mode == "quick":
-                command += ["--url", f"http://127.0.0.1:{self.server_port}"]
-            else:
-                tunnel_token = os.getenv("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
-                public_url = os.getenv("CLOUDFLARE_PUBLIC_URL", "").strip().rstrip("/")
-                if not tunnel_token or not public_url:
-                    raise RuntimeError(
-                        "Set CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_PUBLIC_URL for named mode."
-                    )
-                child_env["TUNNEL_TOKEN"] = tunnel_token
-                command += ["run"]
-                self._public_url = public_url
+            command += ["--url", f"http://127.0.0.1:{self.server_port}"]
 
             creation_flags = (
                 subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -130,25 +114,17 @@ class TunnelManager:
             )
             self._reader_thread.start()
 
-        if mode == "quick":
-            self._url_event.wait(timeout=25)
-            current = self.status()
-            if not current["running"]:
-                raise RuntimeError(
-                    str(current["error"] or "Quick Tunnel stopped before it was ready.")
-                )
-            if not current["public_url"]:
-                self.stop()
-                raise RuntimeError(
-                    "Quick Tunnel did not return a public URL within 25 seconds."
-                )
-        else:
-            time.sleep(0.5)
-            current = self.status()
-            if not current["running"]:
-                raise RuntimeError(
-                    str(current["error"] or "Named tunnel failed to start.")
-                )
+        self._url_event.wait(timeout=25)
+        current = self.status()
+        if not current["running"]:
+            raise RuntimeError(
+                str(current["error"] or "Quick Tunnel stopped before it was ready.")
+            )
+        if not current["public_url"]:
+            self.stop()
+            raise RuntimeError(
+                "Quick Tunnel did not return a public URL within 25 seconds."
+            )
 
         return self.status()
 
